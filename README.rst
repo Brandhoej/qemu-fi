@@ -30,6 +30,12 @@ open source applications such as oVirt, OpenStack and virt-manager.
 QEMU as a whole is released under the GNU General Public License,
 version 2. For full licensing details, consult the LICENSE file.
 
+QEMU-FI (Fault Injector)
+=============
+
+.. code-block:: shell
+
+  ./build-arm-fi.sh
 
 Documentation
 =============

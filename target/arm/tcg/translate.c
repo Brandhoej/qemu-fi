@@ -27,6 +27,7 @@
 #include "semihosting/semihost.h"
 #include "cpregs.h"
 #include "exec/helper-proto.h"
+#include "qemu/fi.h"
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
@@ -51,10 +52,15 @@ TCGv_i32 cpu_CF, cpu_NF, cpu_VF, cpu_ZF;
 TCGv_i64 cpu_exclusive_addr;
 TCGv_i64 cpu_exclusive_val;
 
+/* This is the counter for the bit-flips */
+static TCGv_i32 bf_counters_ref[MAX_FIS];
+
 static const char * const regnames[] =
     { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
 
+static BFR *bfrs;
+static size_t bfrs_size;
 
 /* initialize TCG globals.  */
 void arm_translate_init(void)
@@ -76,7 +82,17 @@ void arm_translate_init(void)
     cpu_exclusive_val = tcg_global_mem_new_i64(tcg_env,
         offsetof(CPUARMState, exclusive_val), "exclusive_val");
 
+    for (i = 0; i < MAX_FIS; i++) {
+        bf_counters_ref[i] = tcg_global_mem_new_i32(tcg_env,
+            offsetof(CPUARMState, bf_counters[i]), g_strdup_printf("bf_counter_%d", i));
+    }
+
     a64_translate_init();
+}
+
+void fi_init_strategy(BFR array[MAX_FIS], size_t array_size) {
+    bfrs = array;
+    bfrs_size = array_size;
 }
 
 uint64_t asimd_imm_const(uint32_t imm, int cmode, int op)
@@ -7775,6 +7791,13 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
     disas_arm_insn(dc, insn);
+
+    for (int i = 0; i < bfrs_size; i++) {
+        BFR bfr = bfrs[i];
+        if (bfr.source == dc->pc_curr && bfr.destination == dc->base.pc_next) {
+            tcg_gen_bfr(cpu_R[bfr.reg], tcg_constant_i32(bfr.counter), offsetof(CPUARMState, bf_counters[i]), bfr.mask);
+        }
+    }
 
     arm_post_translate_insn(dc);
 

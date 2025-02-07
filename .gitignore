@@ -1,5 +1,6 @@
 /GNUmakefile
 /build/
+/build-arm/
 /.cache/
 /.vscode/
 *.pyc
@@ -20,3 +21,7 @@ GTAGS
 *.swp
 *.patch
 *.gcov
+.idea/.gitignore
+.idea/editor.xml
+.idea/misc.xml
+.idea/vcs.xml

@@ -558,4 +558,7 @@ static inline void tcg_gen_trunc_ptr_i32(TCGv_i32 r, TCGv_ptr a)
 #undef PTR
 #undef NAT
 
+/* Fault injection */
+void tcg_gen_bfr(TCGv_i32 reg, TCGv_i32 at, tcg_target_long counter_offset, int32_t mask);
+
 #endif /* TCG_TCG_OP_COMMON_H */

@@ -3362,3 +3362,22 @@ void tcg_gen_lookup_and_goto_ptr(void)
     tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
     tcg_temp_free_ptr(ptr);
 }
+
+void tcg_gen_bfr(TCGv_i32 reg, TCGv_i32 at, tcg_target_long counter_offset, int32_t mask) {
+    TCGLabel *label_end = gen_new_label();
+
+    TCGv_i32 tmp_counter = tcg_temp_new_i32();
+    tcg_gen_ld_i32(tmp_counter, tcg_env, counter_offset);
+
+    // FIXME: This can overflow. The fix is to only increment when the counter has not reached the at-value.
+
+    // If the counter has not reached its limit then dont perform the flip.
+    // Always increment the counter even if we did perform the flip.
+    // This ensure flips are not repeated for the next execution of the instruction.
+    tcg_gen_brcond_i32(TCG_COND_NE, tmp_counter, at, label_end);
+    tcg_gen_xor_i32(reg, reg, tcg_constant_i32(mask));
+
+    gen_set_label(label_end);
+    tcg_gen_add_i32(tmp_counter, tmp_counter, tcg_constant_i32(1));
+    tcg_gen_st_i32(tmp_counter, tcg_env, counter_offset);
+}

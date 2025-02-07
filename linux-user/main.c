@@ -21,6 +21,7 @@
 #include "qemu/help-texts.h"
 #include "qemu/units.h"
 #include "qemu/accel.h"
+#include "qemu/fi.h"
 #include "qemu-version.h"
 #include <sys/syscall.h>
 #include <sys/resource.h>
@@ -95,6 +96,12 @@ static bool enable_strace;
  */
 static int last_log_mask;
 static const char *last_log_filename;
+
+/*
+ * The fault injection file.
+ */
+static bool apply_fi;
+static const char *fi_filename;
 
 /*
  * When running 32-on-64 we should make sure we can fit all of the possible
@@ -430,6 +437,12 @@ static void handle_arg_strace(const char *arg)
     enable_strace = true;
 }
 
+static void handle_arg_fi(const char *arg)
+{
+    fi_filename = arg;
+    apply_fi = true;
+}
+
 static void handle_arg_version(const char *arg)
 {
     printf("qemu-" TARGET_NAME " version " QEMU_FULL_VERSION
@@ -537,6 +550,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "Generate a /tmp/perf-${pid}.map file for perf"},
     {"jitdump",    "QEMU_JITDUMP",     false, handle_arg_jitdump,
      "",           "Generate a jit-${pid}.dump file for perf"},
+    {"fi",         "QEMU_FI",          true, handle_arg_fi,
+     "",           "Perform Fault-Injections as per the file"},
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 
@@ -680,6 +695,35 @@ static int parse_args(int argc, char **argv)
     exec_path = argv[optind];
 
     return optind;
+}
+
+static int parse_fi(BFR bfrs[MAX_FIS], size_t *bfrs_size) {
+    FILE *fp = fopen(fi_filename, "r");
+    if (!fp) {
+        return EXIT_FAILURE;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        BFR entry;
+        int matched = sscanf(line, "bfr %hhu %d %i %i %i",
+            &entry.reg,
+            &entry.counter,
+            &entry.source,
+            &entry.destination,
+            &entry.mask);
+
+        if (matched != 5) {
+            fprintf(stderr, "Error parsing line: %s", line);
+            continue;
+        }
+
+        bfrs[(*bfrs_size)++] = entry;
+    }
+
+    fclose(fp);
+
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv, char **envp)
@@ -976,6 +1020,17 @@ int main(int argc, char **argv, char **envp)
 
     for (wrk = target_environ; *wrk; wrk++) {
         g_free(*wrk);
+    }
+
+    /*
+     * If a fault injection file is specified. Then the file is parsed
+     * and the corresponding fault injection is initialised with the strategy.
+     */
+    if (apply_fi) {
+        BFR bfrs[MAX_FIS];
+        size_t array_size;
+        parse_fi(bfrs, &array_size);
+        fi_init_strategy(bfrs, array_size);
     }
 
     g_free(target_environ);
