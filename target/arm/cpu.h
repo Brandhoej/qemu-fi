@@ -675,7 +675,7 @@ typedef struct CPUArchState {
     uint64_t exclusive_addr;
     uint64_t exclusive_val;
 
-    uint32_t bf_counters[MAX_FIS];
+    uint32_t g_counters[MAX_FIS];
     /*
      * Contains the 'val' for the second 64-bit register of LDXP, which comes
      * from the higher address, not the high part of a complete 128-bit value.

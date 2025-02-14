@@ -559,6 +559,14 @@ static inline void tcg_gen_trunc_ptr_i32(TCGv_i32 r, TCGv_ptr a)
 #undef NAT
 
 /* Fault injection */
+// Bit-Flip Register (BFR) attack code generation:
 void tcg_gen_bfr(TCGv_i32 reg, TCGv_i32 at, tcg_target_long counter_offset, int32_t mask);
+// Instruction Skip (IS) attack code generation:
+void tcg_gen_is_before(TCGLabel *label, TCGv_i32 at, tcg_target_long counter_offset);
+void tcg_gen_is_after(TCGLabel *label, tcg_target_long counter_offset);
+// Instruction Corruption (IS) attack code generation:
+void tcg_gen_ic_before(TCGLabel *label, TCGv_i32 at, tcg_target_long counter_offset);
+void tcg_gen_ic_middle(TCGLabel *label_corrupt, TCGLabel *label_end);
+void tcg_gen_ic_after(TCGLabel *label_end);
 
 #endif /* TCG_TCG_OP_COMMON_H */

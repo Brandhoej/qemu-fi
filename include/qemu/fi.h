@@ -10,7 +10,7 @@
 // Maximum number of fault injections.
 #define MAX_FIS 32
 
-// Bit-Flip Register (BFR) attack. The model bases BFR attacks to happen between the execution of instructions.
+// Bit-Flip Register (BFR) attack. Models BFR attacks as register bit-flips on the transition between instructions.
 typedef struct BFR {
     // The source as the instruction offset.
     target_ulong source;
@@ -24,6 +24,41 @@ typedef struct BFR {
     uint8_t reg;
 } BFR;
 
-void fi_init_strategy(BFR array[MAX_FIS], size_t array_size);
+// Instruction Skip (IS) attack. Models IS attacks as a single instruction which can be skipped. 
+typedef struct IS {
+    // The instruction to skip.
+    target_ulong pc;
+    // The logical counter for the time-to-attack.
+    int32_t counter;
+} IS;
+
+// Instruction Corruption (IC) attack. Models IC attacks by flipping the mask on the instruction.
+typedef struct IC {
+    // The instruction to corrupt.
+    target_ulong pc;
+    // The mask describing the bits to flip.
+    int32_t mask;
+    // The logical counter for the time-to-attack.
+    int32_t counter;
+} IC;
+
+typedef enum AttackType {
+    ATTACK_BFR,
+    ATTACK_IS,
+    ATTACK_IC,
+} AttackType;
+
+typedef union AttackStrategy {
+    BFR bfr;
+    IS is;
+    IC ic;
+} AttackStrategy;
+
+typedef struct Attack {
+    AttackType type;
+    AttackStrategy strategy;
+} Attack;
+
+void fi_init_strategy(Attack attacks[MAX_FIS], size_t number_of_attacks);
 
 #endif

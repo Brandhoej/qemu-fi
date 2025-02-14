@@ -53,14 +53,14 @@ TCGv_i64 cpu_exclusive_addr;
 TCGv_i64 cpu_exclusive_val;
 
 /* This is the counter for the bit-flips */
-static TCGv_i32 bf_counters_ref[MAX_FIS];
+static TCGv_i32 g_counters_ref[MAX_FIS];
 
 static const char * const regnames[] =
     { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
 
-static BFR *bfrs;
-static size_t bfrs_size;
+static Attack *g_attacks;
+static size_t g_number_of_attacks;
 
 /* initialize TCG globals.  */
 void arm_translate_init(void)
@@ -83,16 +83,16 @@ void arm_translate_init(void)
         offsetof(CPUARMState, exclusive_val), "exclusive_val");
 
     for (i = 0; i < MAX_FIS; i++) {
-        bf_counters_ref[i] = tcg_global_mem_new_i32(tcg_env,
-            offsetof(CPUARMState, bf_counters[i]), g_strdup_printf("bf_counter_%d", i));
+        g_counters_ref[i] = tcg_global_mem_new_i32(tcg_env,
+            offsetof(CPUARMState, g_counters[i]), g_strdup_printf("bf_counter_%d", i));
     }
 
     a64_translate_init();
 }
 
-void fi_init_strategy(BFR array[MAX_FIS], size_t array_size) {
-    bfrs = array;
-    bfrs_size = array_size;
+void fi_init_strategy(Attack attacks[MAX_FIS], size_t number_of_attacks) {
+    g_attacks = attacks;
+    g_number_of_attacks = number_of_attacks;
 }
 
 uint64_t asimd_imm_const(uint32_t imm, int cmode, int op)
@@ -7790,13 +7790,64 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
-    disas_arm_insn(dc, insn);
 
-    for (int i = 0; i < bfrs_size; i++) {
-        BFR bfr = bfrs[i];
-        if (bfr.source == dc->pc_curr && bfr.destination == dc->base.pc_next) {
-            tcg_gen_bfr(cpu_R[bfr.reg], tcg_constant_i32(bfr.counter), offsetof(CPUARMState, bf_counters[i]), bfr.mask);
+    bool was_attacked = false;
+
+    for (int i = 0; i < g_number_of_attacks; i++) {
+        Attack attack = g_attacks[i];
+
+        switch (attack.type) {
+            case ATTACK_BFR:
+            
+            BFR bfr = attack.strategy.bfr;
+            if (bfr.source == dc->pc_curr && bfr.destination == dc->base.pc_next) {
+                was_attacked = true;
+
+                disas_arm_insn(dc, insn);
+                tcg_gen_bfr(cpu_R[bfr.reg], tcg_constant_i32(bfr.counter), offsetof(CPUARMState, g_counters[i]), bfr.mask);
+            }
+
+            break;
+            case ATTACK_IS:
+
+            IS is = attack.strategy.is;
+            if (is.pc == dc->pc_curr) {
+                was_attacked = true;
+
+                TCGLabel *label_skip = gen_new_label();
+                tcg_gen_is_before(label_skip, tcg_constant_i32(is.counter), offsetof(CPUARMState, g_counters[i]));
+                disas_arm_insn(dc, insn);
+                tcg_gen_is_after(label_skip, offsetof(CPUARMState, g_counters[i]));
+            }
+
+            break;
+
+            case ATTACK_IC:
+
+            IC ic = attack.strategy.ic;
+            if (ic.pc == dc->pc_curr) {
+                was_attacked = true;
+
+                TCGLabel *label_end = gen_new_label();
+                TCGLabel *label_corrupt = gen_new_label();
+
+                tcg_gen_ic_before(label_end, tcg_constant_i32(ic.counter), offsetof(CPUARMState, g_counters[i]));
+                disas_arm_insn(dc, insn);
+                tcg_gen_ic_middle(label_corrupt, label_end);
+                disas_arm_insn(dc, insn ^ ic.mask);
+                tcg_gen_ic_after(label_end);
+            }
+
+            break;
         }
+
+        if (was_attacked) {
+            break;
+        }
+    }
+
+    if (!was_attacked) {
+        disas_arm_insn(dc, insn);
     }
 
     arm_post_translate_insn(dc);

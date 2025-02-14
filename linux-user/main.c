@@ -697,7 +697,7 @@ static int parse_args(int argc, char **argv)
     return optind;
 }
 
-static int parse_fi(BFR bfrs[MAX_FIS], size_t *bfrs_size) {
+static int parse_fi(Attack attacks[MAX_FIS], size_t *number_of_attacks) {
     FILE *fp = fopen(fi_filename, "r");
     if (!fp) {
         return EXIT_FAILURE;
@@ -705,24 +705,45 @@ static int parse_fi(BFR bfrs[MAX_FIS], size_t *bfrs_size) {
 
     char line[256];
     while (fgets(line, sizeof(line), fp)) {
-        BFR entry;
-        int matched = sscanf(line, "bfr %hhu %d %i %i %i",
-            &entry.reg,
-            &entry.counter,
-            &entry.source,
-            &entry.destination,
-            &entry.mask);
+        if (*number_of_attacks >= MAX_FIS) {
+            fprintf(stderr, "Error: Maximum number of fault injections reached.\n");
+            break;
+        }
 
-        if (matched != 5) {
+        Attack entry;
+
+        // Try parsing as BFR attack
+        if (sscanf(line, "bfr %hhu %i %i %i %i",
+                   &entry.strategy.bfr.reg,
+                   &entry.strategy.bfr.counter,
+                   &entry.strategy.bfr.source,
+                   &entry.strategy.bfr.destination,
+                   &entry.strategy.bfr.mask) == 5) {
+            entry.type = ATTACK_BFR;
+        }
+        // Try parsing as IS attack
+        else if (sscanf(line, "is %i %i",
+                        &entry.strategy.is.pc,
+                        &entry.strategy.is.counter) == 2) {
+            entry.type = ATTACK_IS;
+        }
+        // Try parsing as IC attack
+        else if (sscanf(line, "ic %i %i %i",
+                        &entry.strategy.ic.pc,
+                        &entry.strategy.ic.mask,
+                        &entry.strategy.ic.counter) == 3) {
+            entry.type = ATTACK_IC;
+        }
+        // If no match, print error
+        else {
             fprintf(stderr, "Error parsing line: %s", line);
             continue;
         }
 
-        bfrs[(*bfrs_size)++] = entry;
+        attacks[(*number_of_attacks)++] = entry;
     }
 
     fclose(fp);
-
     return EXIT_SUCCESS;
 }
 
@@ -1027,10 +1048,10 @@ int main(int argc, char **argv, char **envp)
      * and the corresponding fault injection is initialised with the strategy.
      */
     if (apply_fi) {
-        BFR bfrs[MAX_FIS];
-        size_t array_size;
-        parse_fi(bfrs, &array_size);
-        fi_init_strategy(bfrs, array_size);
+        Attack attacks[MAX_FIS];
+        size_t number_of_attacks;
+        parse_fi(attacks, &number_of_attacks);
+        fi_init_strategy(attacks, number_of_attacks);
     }
 
     g_free(target_environ);

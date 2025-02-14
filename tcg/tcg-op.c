@@ -3381,3 +3381,32 @@ void tcg_gen_bfr(TCGv_i32 reg, TCGv_i32 at, tcg_target_long counter_offset, int3
     tcg_gen_add_i32(tmp_counter, tmp_counter, tcg_constant_i32(1));
     tcg_gen_st_i32(tmp_counter, tcg_env, counter_offset);
 }
+
+void tcg_gen_is_before(TCGLabel *label, TCGv_i32 at, tcg_target_long counter_offset) {
+    TCGv_i32 tmp_counter = tcg_temp_new_i32();
+    tcg_gen_ld_i32(tmp_counter, tcg_env, counter_offset);
+    tcg_gen_brcond_i32(TCG_COND_EQ, tmp_counter, at, label);
+}
+
+void tcg_gen_is_after(TCGLabel *label, tcg_target_long counter_offset) {
+    gen_set_label(label);
+    TCGv_i32 tmp_counter = tcg_temp_new_i32();
+    tcg_gen_ld_i32(tmp_counter, tcg_env, counter_offset);
+    tcg_gen_add_i32(tmp_counter, tmp_counter, tcg_constant_i32(1));
+    tcg_gen_st_i32(tmp_counter, tcg_env, counter_offset);
+}
+
+void tcg_gen_ic_before(TCGLabel *label_end, TCGv_i32 at, tcg_target_long counter_offset) {
+    TCGv_i32 tmp_counter = tcg_temp_new_i32();
+    tcg_gen_ld_i32(tmp_counter, tcg_env, counter_offset);
+    tcg_gen_brcond_i32(TCG_COND_NE, tmp_counter, at, label_end);
+}
+
+void tcg_gen_ic_middle(TCGLabel *label_corrupt, TCGLabel *label_end) {
+    tcg_gen_br(label_end);
+    gen_set_label(label_corrupt);
+}
+
+void tcg_gen_ic_after(TCGLabel *label_end) {
+    gen_set_label(label_end);
+}
