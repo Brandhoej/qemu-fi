@@ -59,6 +59,7 @@ static const char * const regnames[] =
     { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
 
+/* The attacks to be done by injection on disas */
 static Attack *g_attacks;
 static size_t g_number_of_attacks;
 
@@ -84,7 +85,7 @@ void arm_translate_init(void)
 
     for (i = 0; i < MAX_FIS; i++) {
         g_counters_ref[i] = tcg_global_mem_new_i32(tcg_env,
-            offsetof(CPUARMState, g_counters[i]), g_strdup_printf("bf_counter_%d", i));
+            offsetof(CPUARMState, g_counters[i]), g_strdup_printf("attack_counter_%d", i));
     }
 
     a64_translate_init();

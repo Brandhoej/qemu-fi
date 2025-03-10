@@ -712,13 +712,23 @@ static int parse_fi(Attack attacks[MAX_FIS], size_t *number_of_attacks) {
 
         Attack entry;
 
-        // Try parsing as BFR attack
+        // Try parsing as BFR attack with 128-bit register supprt (CPUArchState gpr + gprh / mask_h)
         if (sscanf(line, "bfr %hhu %i %i %i %i",
                    &entry.strategy.bfr.reg,
                    &entry.strategy.bfr.counter,
                    &entry.strategy.bfr.source,
                    &entry.strategy.bfr.destination,
-                   &entry.strategy.bfr.mask) == 5) {
+                   &entry.strategy.bfr.mask,
+                   &entry.strategy.bfr.mask_h) == 6) {
+            entry.type = ATTACK_BFR;
+        }
+        // Try parsing as BFR attack with 64-bit register supprt (CPUArchState gpr)
+        if (sscanf(line, "bfr %hhu %i %i %i %i %i",
+                    &entry.strategy.bfr.reg,
+                    &entry.strategy.bfr.counter,
+                    &entry.strategy.bfr.source,
+                    &entry.strategy.bfr.destination,
+                    &entry.strategy.bfr.mask) == 5) {
             entry.type = ATTACK_BFR;
         }
         // Try parsing as IS attack

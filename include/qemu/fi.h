@@ -10,6 +10,11 @@
 // Maximum number of fault injections.
 #define MAX_FIS 32
 
+/* All attacks so far are adopted to CPUARchState where there is:
+ * 1. General purpose registers (target_ulong) "gpr[32]"
+ * 2. General purpose _half_ registers (target_ulong) "gprh[32]" 
+ * Where grph is the upper half for 128-bit registers. */
+
 // Bit-Flip Register (BFR) attack. Models BFR attacks as register bit-flips on the transition between instructions.
 typedef struct BFR {
     // The source as the instruction offset.
@@ -17,7 +22,9 @@ typedef struct BFR {
     // The destination as the instruction offset.
     target_ulong destination;
     // The mask describing the bits to flip.
-    int32_t mask;
+    target_ulong mask;
+    // The upper-half mask for the bits to flip in the gprh register.
+    target_ulong mask_h;
     // The logical counter for the time-to-attack.
     int32_t counter;
     // The index of the register in cpu_R.

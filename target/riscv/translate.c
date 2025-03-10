@@ -18,6 +18,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/fi.h"
 #include "cpu.h"
 #include "tcg/tcg-op.h"
 #include "exec/exec-all.h"
@@ -42,6 +43,13 @@ static TCGv cpu_gpr[32], cpu_gprh[32], cpu_pc, cpu_vl, cpu_vstart;
 static TCGv_i64 cpu_fpr[32]; /* assume F and D extensions */
 static TCGv load_res;
 static TCGv load_val;
+
+/* The attacks to be done by injection on disas */
+static Attack *g_attacks;
+static size_t g_number_of_attacks;
+
+/* This is the counter for the bit-flips */
+static TCGv_i32 g_counters_ref[MAX_FIS];
 
 /*
  * If an operation is being performed on less than TARGET_LONG_BITS,
@@ -183,6 +191,11 @@ static void gen_nanbox_s(TCGv_i64 out, TCGv_i64 in)
 static void gen_nanbox_h(TCGv_i64 out, TCGv_i64 in)
 {
     tcg_gen_ori_i64(out, in, MAKE_64BIT_MASK(16, 48));
+}
+
+void fi_init_strategy(Attack attacks[MAX_FIS], size_t number_of_attacks) {
+    g_attacks = attacks;
+    g_number_of_attacks = number_of_attacks;
 }
 
 /*
@@ -1279,9 +1292,86 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     CPURISCVState *env = cpu_env(cpu);
     uint16_t opcode16 = translator_lduw(env, &ctx->base, ctx->base.pc_next);
 
-    ctx->ol = ctx->xl;
-    decode_opc(env, ctx, opcode16);
-    ctx->base.pc_next += ctx->cur_insn_len;
+    // Added to the clearity of FI.
+    vaddr current_pc = ctx->base.pc_next;
+    int instruction_length = insn_len(opcode16);
+    vaddr next_pc = current_pc + instruction_length;
+
+    // For now only single FI are supported.
+    bool was_attacked = false;
+
+    // TODO: Insert TCG injections around decode_opc
+    for (int i = 0; i < g_number_of_attacks; i++) {
+        Attack attack = g_attacks[i];
+
+
+        switch (attack.type)
+        {
+            case ATTACK_BFR:
+
+                BFR bfr = attack.strategy.bfr;
+                if (bfr.source == current_pc && bfr.destination == next_pc) {
+                    was_attacked = true;
+
+                    ctx->ol = ctx->xl;
+                    decode_opc(env, ctx, opcode16);
+                    ctx->base.pc_next += ctx->cur_insn_len;
+
+                    tcg_gen_bfr(cpu_gpr[bfr.reg], tcg_constant_i32(bfr.counter), offsetof(CPURISCVState, g_counters[i]), bfr.mask);
+                    tcg_gen_bfr(cpu_gprh[bfr.reg], tcg_constant_i32(bfr.counter), offsetof(CPURISCVState, g_counters[i]), bfr.mask_h);
+                }
+
+                break;
+            case ATTACK_IS:
+
+                IS is = attack.strategy.is;
+                if (is.pc == current_pc) {
+                    was_attacked = true;
+
+                    TCGLabel *label_skip = gen_new_label();
+                    tcg_gen_is_before(label_skip, tcg_constant_i32(is.counter), offsetof(CPURISCVState, g_counters[i]));
+
+                    ctx->ol = ctx->xl;
+                    decode_opc(env, ctx, opcode16);
+                    ctx->base.pc_next += ctx->cur_insn_len;
+
+                    tcg_gen_is_after(label_skip, offsetof(CPURISCVState, g_counters[i]));
+                }
+
+                break;
+            case ATTACK_IC:
+
+                IC ic = attack.strategy.ic;
+                if (ic.pc == current_pc) {
+                    was_attacked = true;
+
+                    TCGLabel *label_end = gen_new_label();
+                    TCGLabel *label_corrupt = gen_new_label();
+
+                    tcg_gen_ic_before(label_end, tcg_constant_i32(ic.counter), offsetof(CPURISCVState, g_counters[i]));
+
+                    ctx->ol = ctx->xl;
+                    decode_opc(env, ctx, opcode16);
+                    ctx->base.pc_next += ctx->cur_insn_len;
+
+                    tcg_gen_ic_middle(label_corrupt, label_end);
+
+                    ctx->ol = ctx->xl;
+                    decode_opc(env, ctx, opcode16 ^ ic.mask);
+                    ctx->base.pc_next += ctx->cur_insn_len;
+
+                    tcg_gen_ic_after(label_end);
+                }
+
+                break;
+        }
+    }
+
+    if (!was_attacked) {
+        ctx->ol = ctx->xl;
+        decode_opc(env, ctx, opcode16);
+        ctx->base.pc_next += ctx->cur_insn_len;
+    }
 
     /*
      * If 'fcfi_lp_expected' is still true after processing the instruction,
@@ -1384,4 +1474,9 @@ void riscv_translate_init(void)
                              "load_res");
     load_val = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, load_val),
                              "load_val");
+
+    for (i = 0; i < MAX_FIS; i++) {
+        g_counters_ref[i] = tcg_global_mem_new_i32(tcg_env,
+            offsetof(CPURISCVState, g_counters[i]), g_strdup_printf("attack_counter_%d", i));
+    }
 }
